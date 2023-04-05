@@ -27,8 +27,6 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         uint256 percentOfThePrice; // Percentage discount for the price
         uint256 startTime;
         uint256 biddingEndTime;
-        address highestBidder;
-        uint256 highestBid;
     }
     struct Bid {
         address payable buyer;
@@ -37,11 +35,11 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         bool isFinished;
     }
 
-    mapping(uint256 => AuctionData) private itemAuctionData;
+    mapping(uint256 => AuctionData) public itemAuctionData;
     Counters.Counter private itemIdsAuction;
-    mapping(uint256 => Bid[]) bids;
+    mapping(uint256 => Bid[])public bids;
 
-    mapping(uint256 => MarketItem) private itemToMarket;
+    mapping(uint256 => MarketItem) public itemToMarket;
     Counters.Counter private itemIds;
 
     mapping(address => uint256) balances;
@@ -82,6 +80,14 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         address buyer,
         uint256 Price,
         uint256 time
+    );
+
+    event _acceptBidByOwner(
+        address nftContract,
+        uint256 tokenId,
+        address owner,
+        address buyer,
+        uint256 amountOfToken
     );
 
     constructor() {
@@ -166,10 +172,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         );
     }
 
-    function validateFixPrice(
-        address nftContract,
-        uint256 itemId
-    ) public payable nonReentrant {
+    function validateFixPrice(uint256 itemId) public payable nonReentrant {
         uint256 _itemId = itemIds.current();
         require(itemId < _itemId, "createAuction: it is not item market");
 
@@ -179,7 +182,6 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         address _nftContract = itemToMarket[itemId].nftContract;
 
         require(msg.value == price, "Please Paye Correct Price");
-        require(nftContract == _nftContract, "it is not smart contract");
 
         Address.sendValue(itemToMarket[itemId].owner, price - feePrice);
         if (
@@ -242,15 +244,13 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             "createAuction: The deadline should to be greater than 1 day"
         );
 
-        uint256 Id = itemIdsAuction.current();
+        uint256 IdAction = itemIdsAuction.current();
         uint256 minPrice = (oneItem.price * _percentOfThePrice) / 100;
-        itemAuctionData[Id] = AuctionData({
+        itemAuctionData[IdAction] = AuctionData({
             _itemIds: itemIds_,
             percentOfThePrice: minPrice,
             startTime: block.timestamp,
-            biddingEndTime: block.timestamp + _biddingTime,
-            highestBidder: address(0),
-            highestBid: 0
+            biddingEndTime: block.timestamp + _biddingTime
         });
         itemIdsAuction.increment();
         emit _createAuctionData(
@@ -268,26 +268,25 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             "addBidToNFT : it is not item Auction"
         );
         AuctionData memory action = itemAuctionData[_itemIdsAuction];
-        uint id_ = action._itemIds;
+        uint256 id_ = action._itemIds;
         MarketItem memory itemMarket = itemToMarket[id_];
         require(
             msg.sender != itemMarket.owner,
-            "you cant bid on your own action"
+            "addBidToNFT : you cant bid on your own action"
         );
         require(
             msg.value >= action.percentOfThePrice,
-            "this bid needs to be more than minBid"
+            "addBidToNFT : this bid needs to be more than minBid"
         );
         require(
             action.biddingEndTime > block.timestamp,
-            "this auction is ended"
+            "addBidToNFT : this auction is ended"
         );
         if (bids[_itemIdsAuction].length > 0) {
             require(
                 msg.value >
-                    bids[_itemIdsAuction][bids[_itemIdsAuction].length - 1]
-                        .Price,
-                "this bid needs to be more than last bid"
+                    bids[_itemIdsAuction][bids[_itemIdsAuction].length - 1].Price,
+                "addBidToNFT : this bid needs to be more than last bid"
             );
         }
 
@@ -317,7 +316,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
 
         if (bids[_itemIdsAuction].length > 0) {
             AuctionData storage action = itemAuctionData[_itemIdsAuction];
-            uint id_ = action._itemIds;
+            uint256 id_ = action._itemIds;
             MarketItem storage itemMarket = itemToMarket[id_];
             Bid storage bid = bids[_itemIdsAuction][
                 bids[_itemIdsAuction].length - 1
@@ -332,13 +331,54 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             );
             bid.isFinished = true;
             itemMarket.sold = true;
-            uint payment = bid.Price;
+            uint256 payment = bid.Price;
             bid.Price = 0;
             balances[bid.buyer] -= payment;
             uint256 feePrice = (payment * marketplaceFee) / 100;
             Address.sendValue(itemMarket.owner, payment - feePrice);
             Address.sendValue(payable(admin), feePrice);
-            for (uint i; i < listBid.length - 1; i++) {
+            address _nftContract = itemMarket.nftContract;
+
+            if (
+                IERC165(_nftContract).supportsInterface(
+                    type(IERC721).interfaceId
+                )
+            ) {
+                IERC721(_nftContract).transferFrom(
+                    itemMarket.owner,
+                    bid.buyer,
+                    itemMarket.tokenId
+                );
+                emit _acceptBidByOwner(
+                    _nftContract,
+                    itemMarket.tokenId,
+                    itemMarket.owner,
+                    bid.buyer,
+                    1
+                );
+            } else if (
+                IERC165(_nftContract).supportsInterface(
+                    type(IERC1155).interfaceId
+                )
+            ) {
+                IERC1155(_nftContract).safeTransferFrom(
+                    itemMarket.owner,
+                    bid.buyer,
+                    itemMarket.tokenId,
+                    itemMarket.amountOfToken,
+                    "0x0"
+                );
+                emit _validateFixPrice(
+                    _nftContract,
+                    itemMarket.tokenId,
+                    itemMarket.owner,
+                    bid.buyer,
+                    itemMarket.amountOfToken
+                );
+            }
+            itemMarket.owner = bid.buyer;
+
+            for (uint256 i; i < listBid.length - 1; i++) {
                 if (listBid[i].isFinished == false) {
                     payment = listBid[i].Price;
                     listBid[i].isFinished = true;
