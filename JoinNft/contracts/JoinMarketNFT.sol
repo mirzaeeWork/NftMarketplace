@@ -9,6 +9,8 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import "contracts/IERC1155Owner.sol";
+
 
 contract JoinMarketNft is ReentrancyGuard, Context {
     using Counters for Counters.Counter;
@@ -27,6 +29,8 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         uint256 percentOfThePrice; // Percentage discount for the price
         uint256 startTime;
         uint256 biddingEndTime;
+        address highestBidder;
+        uint256 highestBid;
     }
     struct Bid {
         address payable buyer;
@@ -37,7 +41,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
 
     mapping(uint256 => AuctionData) public itemAuctionData;
     Counters.Counter private itemIdsAuction;
-    mapping(uint256 => Bid[])public bids;
+    mapping(uint256 => Bid[]) public bids;
 
     mapping(uint256 => MarketItem) public itemToMarket;
     Counters.Counter private itemIds;
@@ -113,9 +117,11 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             "The full price for the tokens need to be greater than 0"
         );
         uint256 _itemId = itemIds.current();
+
         if (
             IERC165(_nftContract).supportsInterface(type(IERC721).interfaceId)
         ) {
+            require(IERC721(_nftContract).ownerOf(_tokenId)==_msgSender(),"createMarketItem : only owner");
             itemToMarket[_itemId] = MarketItem(
                 _nftContract,
                 _tokenId,
@@ -135,6 +141,9 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         } else if (
             IERC165(_nftContract).supportsInterface(type(IERC1155).interfaceId)
         ) {
+            address owner;
+            (owner,)=IERC1155Owner(_nftContract).OwnerOf(_tokenId);
+            require(owner ==_msgSender(),"createMarketItem : only owner");
             itemToMarket[_itemId] = MarketItem(
                 _nftContract,
                 _tokenId,
@@ -240,7 +249,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             "createAuction:The entered value must be less than or equal to 100"
         );
         require(
-            _biddingTime > 1 days,
+            _biddingTime > 180,
             "createAuction: The deadline should to be greater than 1 day"
         );
 
@@ -248,9 +257,11 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         uint256 minPrice = (oneItem.price * _percentOfThePrice) / 100;
         itemAuctionData[IdAction] = AuctionData({
             _itemIds: itemIds_,
-            percentOfThePrice: minPrice,
+            percentOfThePrice: oneItem.price - minPrice,
             startTime: block.timestamp,
-            biddingEndTime: block.timestamp + _biddingTime
+            biddingEndTime: block.timestamp + _biddingTime,
+            highestBidder: address(0),
+            highestBid: 0
         });
         itemIdsAuction.increment();
         emit _createAuctionData(
@@ -285,7 +296,8 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         if (bids[_itemIdsAuction].length > 0) {
             require(
                 msg.value >
-                    bids[_itemIdsAuction][bids[_itemIdsAuction].length - 1].Price,
+                    bids[_itemIdsAuction][bids[_itemIdsAuction].length - 1]
+                        .Price,
                 "addBidToNFT : this bid needs to be more than last bid"
             );
         }
@@ -377,7 +389,8 @@ contract JoinMarketNft is ReentrancyGuard, Context {
                 );
             }
             itemMarket.owner = bid.buyer;
-
+            action.highestBidder=bid.buyer;
+            action.highestBid=bid.Price;
             for (uint256 i; i < listBid.length - 1; i++) {
                 if (listBid[i].isFinished == false) {
                     payment = listBid[i].Price;
