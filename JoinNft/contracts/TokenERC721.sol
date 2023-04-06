@@ -20,4 +20,10 @@ contract TokenERC721 is ERC721URIStorage{
         _tokenIdCounter.increment();
         return tokenId;
     }
+    
+    function getTokenIdCounter() public view returns (uint256) {
+        uint256 tokenId = _tokenIdCounter.current();
+        return tokenId - 1;
+    }
+
 }

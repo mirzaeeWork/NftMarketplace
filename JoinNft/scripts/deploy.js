@@ -25,7 +25,7 @@ async function main() {
     `erc1155 deployed to : ${erc1155.address}`
   );
   console.log(
-    `marketNft deployed to : ${marketNft.address}`
+    `NftMarket deployed to : ${marketNft.address}`
   );
 
 

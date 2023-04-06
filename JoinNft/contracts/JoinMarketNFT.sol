@@ -11,7 +11,6 @@ import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "contracts/IERC1155Owner.sol";
 
-
 contract JoinMarketNft is ReentrancyGuard, Context {
     using Counters for Counters.Counter;
     uint256 public marketplaceFee = 5;
@@ -98,6 +97,10 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         admin = msg.sender;
     }
 
+    function getPercentOfThePriceOfAction(uint256 _itemIdsAuction) public view returns (uint256 PercentOfThePrice) {
+        PercentOfThePrice = itemAuctionData[_itemIdsAuction].percentOfThePrice;  
+    }
+
     function createMarketItem(
         address _nftContract,
         uint256 _tokenId,
@@ -121,7 +124,10 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         if (
             IERC165(_nftContract).supportsInterface(type(IERC721).interfaceId)
         ) {
-            require(IERC721(_nftContract).ownerOf(_tokenId)==_msgSender(),"createMarketItem : only owner");
+            require(
+                IERC721(_nftContract).ownerOf(_tokenId) == _msgSender(),
+                "createMarketItem : only owner"
+            );
             itemToMarket[_itemId] = MarketItem(
                 _nftContract,
                 _tokenId,
@@ -142,8 +148,8 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             IERC165(_nftContract).supportsInterface(type(IERC1155).interfaceId)
         ) {
             address owner;
-            (owner,)=IERC1155Owner(_nftContract).OwnerOf(_tokenId);
-            require(owner ==_msgSender(),"createMarketItem : only owner");
+            (owner, ) = IERC1155Owner(_nftContract).OwnerOf(_tokenId);
+            require(owner == _msgSender(), "createMarketItem : only owner");
             itemToMarket[_itemId] = MarketItem(
                 _nftContract,
                 _tokenId,
@@ -249,9 +255,10 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             "createAuction:The entered value must be less than or equal to 100"
         );
         require(
-            _biddingTime > 180,
+            _biddingTime > 1 days,
             "createAuction: The deadline should to be greater than 1 day"
         );
+        require(oneItem.owner ==  _msgSender(),"createAuction: should be the owner.");
 
         uint256 IdAction = itemIdsAuction.current();
         uint256 minPrice = (oneItem.price * _percentOfThePrice) / 100;
@@ -323,7 +330,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         uint256 itemIdsAuction_ = itemIdsAuction.current();
         require(
             _itemIdsAuction < itemIdsAuction_,
-            "addBidToNFT : it is not item Auction"
+            "acceptBidByOwner : it is not item Auction"
         );
 
         if (bids[_itemIdsAuction].length > 0) {
@@ -335,11 +342,11 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             ];
             Bid[] storage listBid = bids[_itemIdsAuction];
 
-            require(msg.sender == itemMarket.owner, "you dont have permission");
-            require(bid.isFinished == false, "the auction has ended");
+            require(msg.sender == itemMarket.owner, "acceptBidByOwner : you dont have permission");
+            require(bid.isFinished == false, "acceptBidByOwner : the auction has ended");
             require(
                 action.biddingEndTime < block.timestamp,
-                "the bid has expired"
+                "acceptBidByOwner : the bid has expired"
             );
             bid.isFinished = true;
             itemMarket.sold = true;
@@ -389,8 +396,8 @@ contract JoinMarketNft is ReentrancyGuard, Context {
                 );
             }
             itemMarket.owner = bid.buyer;
-            action.highestBidder=bid.buyer;
-            action.highestBid=bid.Price;
+            action.highestBidder = bid.buyer;
+            action.highestBid = bid.Price;
             for (uint256 i; i < listBid.length - 1; i++) {
                 if (listBid[i].isFinished == false) {
                     payment = listBid[i].Price;
@@ -401,7 +408,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
                 }
             }
         } else {
-            revert("There is no suggestion");
+            revert("acceptBidByOwner : There is no suggestion");
         }
     }
 }
