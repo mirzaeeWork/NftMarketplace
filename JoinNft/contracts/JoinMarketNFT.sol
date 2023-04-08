@@ -45,7 +45,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
     mapping(uint256 => MarketItem) public itemToMarket;
     Counters.Counter private itemIds;
 
-    mapping(address => uint256) balances;
+    mapping(address => mapping(address => uint256)) public balances;
 
     event _createMarketItem(
         address nftContract,
@@ -97,8 +97,10 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         admin = msg.sender;
     }
 
-    function getPercentOfThePriceOfAction(uint256 _itemIdsAuction) public view returns (uint256 PercentOfThePrice) {
-        PercentOfThePrice = itemAuctionData[_itemIdsAuction].percentOfThePrice;  
+    function getPercentOfThePriceOfAction(
+        uint256 _itemIdsAuction
+    ) public view returns (uint256 PercentOfThePrice) {
+        PercentOfThePrice = itemAuctionData[_itemIdsAuction].percentOfThePrice;
     }
 
     function createMarketItem(
@@ -237,8 +239,8 @@ contract JoinMarketNft is ReentrancyGuard, Context {
         Address.sendValue(payable(admin), feePrice);
     }
 
-    function checkBalanceERC20() public view returns (uint256) {
-        return balances[_msgSender()];
+    function checkBalanceERC20(address _nftContract) public view returns (uint256) {
+        return balances[_msgSender()][_nftContract];
     }
 
     function createAuctionData(
@@ -258,7 +260,10 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             _biddingTime > 1 days,
             "createAuction: The deadline should to be greater than 1 day"
         );
-        require(oneItem.owner ==  _msgSender(),"createAuction: should be the owner.");
+        require(
+            oneItem.owner == _msgSender(),
+            "createAuction: should be the owner."
+        );
 
         uint256 IdAction = itemIdsAuction.current();
         uint256 minPrice = (oneItem.price * _percentOfThePrice) / 100;
@@ -317,7 +322,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
                 isFinished: false
             })
         );
-        balances[msg.sender] += msg.value;
+        balances[msg.sender][itemMarket.nftContract] += msg.value;
         emit _addBidToNFT(
             _itemIdsAuction,
             msg.sender,
@@ -342,8 +347,14 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             ];
             Bid[] storage listBid = bids[_itemIdsAuction];
 
-            require(msg.sender == itemMarket.owner, "acceptBidByOwner : you dont have permission");
-            require(bid.isFinished == false, "acceptBidByOwner : the auction has ended");
+            require(
+                msg.sender == itemMarket.owner,
+                "acceptBidByOwner : you dont have permission"
+            );
+            require(
+                bid.isFinished == false,
+                "acceptBidByOwner : the auction has ended"
+            );
             require(
                 action.biddingEndTime < block.timestamp,
                 "acceptBidByOwner : the bid has expired"
@@ -352,7 +363,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
             itemMarket.sold = true;
             uint256 payment = bid.Price;
             bid.Price = 0;
-            balances[bid.buyer] -= payment;
+            balances[bid.buyer][itemMarket.nftContract] -= payment;
             uint256 feePrice = (payment * marketplaceFee) / 100;
             Address.sendValue(itemMarket.owner, payment - feePrice);
             Address.sendValue(payable(admin), feePrice);
@@ -403,7 +414,7 @@ contract JoinMarketNft is ReentrancyGuard, Context {
                     payment = listBid[i].Price;
                     listBid[i].isFinished = true;
                     listBid[i].Price = 0;
-                    balances[listBid[i].buyer] -= payment;
+                    balances[listBid[i].buyer][itemMarket.nftContract] -= payment;
                     Address.sendValue(listBid[i].buyer, payment);
                 }
             }
